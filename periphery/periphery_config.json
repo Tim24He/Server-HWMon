@@ -1,0 +1,8 @@
+{
+  "DEBUG_MODE": false,
+  "POLL_INTERVAL_SECONDS": 2.0,
+  "RECONNECT_DELAY_SECONDS": 5.0,
+  "SERIAL_BAUDRATE": 115200,
+  "ESP32_KEYWORDS": ["esp32", "espressif", "xiao", "seeed"],
+  "ESP32_VID_HINTS": ["0x303A", "0x2886"]
+}

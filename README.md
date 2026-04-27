@@ -1,28 +1,28 @@
-# Server_Stat_UI Monorepo Layout
+# Server_Stat_UI Project Layout
 
-This repository is split so Python (`uv`) and PlatformIO stay isolated:
+This repository keeps Python (`uv`) and PlatformIO side by side at root:
 
-- `apps/periphery/`: Python app (`pyproject.toml`, `uv.lock`, local `.venv`)
-- `firmware/esp32HW/`: ESP32 firmware (`platformio.ini`, `.pio` build output)
+- `periphery/`: Python app (`pyproject.toml`, `uv.lock`, local `.venv`)
+- `esp32HW/`: ESP32 firmware (`platformio.ini`, `.pio` build output)
 
 ## Python (`uv`) workflow
 
 Run commands from the repo root with `--project`:
 
 ```powershell
-uv sync --project apps/periphery
-uv run --project apps/periphery python main.py
+uv sync --project periphery
+uv run --project periphery python periphery/main.py
 ```
 
-Or `cd apps/periphery` and use `uv sync` / `uv run ...` normally.
+Or `cd periphery` and use `uv sync` / `uv run ...` normally.
 
 ## PlatformIO workflow
 
 Run from repo root with `-d`:
 
 ```powershell
-pio run -d firmware/esp32HW
-pio device monitor -d firmware/esp32HW
+pio run -d esp32HW
+pio device monitor -d esp32HW
 ```
 
-Or `cd firmware/esp32HW` and run `pio run` there.
+Or `cd esp32HW` and run `pio run` there.
