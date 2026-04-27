@@ -1,0 +1,20 @@
+# Global editor/system
+.DS_Store
+Thumbs.db
+
+# Python (uv project under apps/periphery)
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/htmlcov/
+apps/periphery/.venv/
+
+# PlatformIO (firmware project)
+firmware/esp32HW/.pio/
+firmware/esp32HW/.vscode/
+
+# Local IDE settings at repo root
+.vscode/

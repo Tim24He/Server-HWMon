@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import socket
 import time
@@ -7,7 +8,13 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-import psutil
+try:
+    psutil = importlib.import_module("psutil")
+except ImportError as exc:
+    raise SystemExit(
+        "Missing required dependency 'psutil'. Install it with: python -m pip install psutil"
+    ) from exc
+
 import serial
 from serial.tools import list_ports
 
