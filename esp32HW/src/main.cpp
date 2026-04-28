@@ -81,7 +81,7 @@ void render_display() {
     }
 
     if (latest_stats.has_core_temp) {
-      snprintf(temp_text, sizeof(temp_text), "%.1f\xC2\xB0""C", latest_stats.core_temp_c);
+      snprintf(temp_text, sizeof(temp_text), "%.0f\xC2\xB0""C", latest_stats.core_temp_c);
     }
     snprintf(cpu_text, sizeof(cpu_text), "%.0f%%", latest_stats.cpu_load_percent);
   }

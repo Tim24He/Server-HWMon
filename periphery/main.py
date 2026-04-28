@@ -136,7 +136,7 @@ def _choose_core_temp_c() -> float | None:
     if not candidates:
         return None
 
-    return round(sum(candidates) / len(candidates), 1)
+    return float(round(sum(candidates) / len(candidates)))
 
 
 def scrape_host_stats() -> HostStats:
@@ -156,6 +156,8 @@ def serialize_stats(stats: HostStats) -> str:
     """
     payload: dict[str, Any] = asdict(stats)
     payload["cpu_load_percent"] = int(round(float(payload["cpu_load_percent"])))
+    if payload["core_temp_c"] is not None:
+        payload["core_temp_c"] = int(round(float(payload["core_temp_c"])))
     return json.dumps(payload, separators=(",", ":"))
 
 
