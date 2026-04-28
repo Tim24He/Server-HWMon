@@ -1,12 +1,47 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <U8g2lib.h>
+#include <Wire.h>
+#include <stdio.h>
 
 static constexpr unsigned long HEARTBEAT_MS = 2000;
 unsigned long last_heartbeat = 0;
+static constexpr unsigned long DISPLAY_REFRESH_MS = 500;
+unsigned long last_display_refresh = 0;
 
 static constexpr size_t SERIAL_LINE_BUFFER_SIZE = 384;
 char serial_line_buffer[SERIAL_LINE_BUFFER_SIZE];
 size_t serial_line_length = 0;
+
+// XIAO ESP32S3 default I2C pins: SDA=D4, SCL=D5.
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
+
+static const unsigned char image_chart_bits[] U8X8_PROGMEM = {
+    0x00, 0x00, 0x01, 0x00, 0xc1, 0x01, 0x41, 0x01, 0x41, 0x01, 0x41,
+    0x1d, 0x41, 0x15, 0x41, 0x15, 0x5d, 0x15, 0x55, 0x15, 0x55, 0x15,
+    0x55, 0x15, 0xdd, 0x1d, 0x01, 0x00, 0xff, 0x3f, 0x00, 0x00};
+
+static const unsigned char image_cloud_bits[] U8X8_PROGMEM = {
+    0x00, 0x00, 0x00, 0xe0, 0x03, 0x00, 0x10, 0x04, 0x00, 0x08, 0x08, 0x00,
+    0x0c, 0x10, 0x00, 0x02, 0x70, 0x00, 0x01, 0x80, 0x00, 0x01, 0x00, 0x01,
+    0x02, 0x00, 0x01, 0xfc, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
+static const unsigned char image_music_record_button_bits[] U8X8_PROGMEM = {
+    0x24, 0x00, 0x00, 0x00, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0xa5, 0x00,
+    0x00, 0x00, 0x00, 0x81, 0x00, 0x00, 0x00, 0x00, 0xa5, 0x00, 0x00, 0x00,
+    0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08};
+
+static const unsigned char image_weather_temperature_bits[] U8X8_PROGMEM = {
+    0x38, 0x00, 0x44, 0x40, 0xd4, 0xa0, 0x54, 0x40, 0xd4, 0x1c, 0x54,
+    0x06, 0xd4, 0x02, 0x54, 0x02, 0x54, 0x06, 0x92, 0x1c, 0x39, 0x01,
+    0x75, 0x01, 0x7d, 0x01, 0x39, 0x01, 0x82, 0x00, 0x7c, 0x00};
 
 struct HostStats {
   String timestamp_utc;
@@ -19,6 +54,63 @@ struct HostStats {
 
 HostStats latest_stats;
 bool has_latest_stats = false;
+
+void render_display() {
+  char ip_text[32] = "waiting...";
+  char temp_text[16] = "n/a";
+  char cpu_text[16] = "0.00%";
+  const char* title_text = "No Data";
+
+  if (has_latest_stats) {
+    if (latest_stats.ip.length() > 0) {
+      latest_stats.ip.toCharArray(ip_text, sizeof(ip_text));
+    }
+
+    if (latest_stats.hostname.length() > 0) {
+      title_text = latest_stats.hostname.c_str();
+    }
+
+    if (latest_stats.has_core_temp) {
+      snprintf(temp_text, sizeof(temp_text), "%.1f\xC2\xB0""C", latest_stats.core_temp_c);
+    }
+    snprintf(cpu_text, sizeof(cpu_text), "%.2f%%", latest_stats.cpu_load_percent);
+  }
+
+  u8g2.clearBuffer();
+
+  // [BEGIN lopaka generated]
+  u8g2.setFontMode(1);
+  u8g2.setBitmapMode(1);
+  u8g2.drawRFrame(0, 0, 128, 14, 5);
+
+  u8g2.drawXBM(32, 3, 36, 22, image_music_record_button_bits);
+
+  u8g2.setFont(u8g2_font_haxrcorp4089_tr);
+  u8g2.drawStr(46, 10, title_text);
+
+  u8g2.drawRFrame(0, 16, 128, 14, 5);
+
+  u8g2.drawRFrame(0, 32, 62, 30, 5);
+
+  u8g2.drawRFrame(66, 32, 62, 30, 5);
+
+  u8g2.setFont(u8g2_font_5x7_tr);
+  u8g2.drawStr(27, 26, ip_text);
+
+  u8g2.drawXBM(6, 17, 17, 16, image_cloud_bits);
+
+  u8g2.drawXBM(4, 39, 16, 16, image_weather_temperature_bits);
+
+  u8g2.setFont(u8g2_font_profont15_tr);
+  u8g2.drawUTF8(22, 52, temp_text);
+
+  u8g2.drawXBM(70, 39, 14, 16, image_chart_bits);
+
+  u8g2.drawStr(87, 52, cpu_text);
+
+  u8g2.sendBuffer();
+  // [END lopaka generated]
+}
 
 bool try_read_string_field(const JsonDocument& doc, const char* key, String& out_value) {
   const JsonVariantConst value = doc[key];
@@ -127,12 +219,21 @@ void setup() {
   Serial.begin(115200);
   delay(250);
   Serial.println("ESP32 monitor receiver booted");
+  u8g2.begin();
+  render_display();
 }
 
 void loop() {
   poll_serial_input();
-
   const unsigned long now = millis();
+
+  if (has_latest_stats) {
+    if (now - last_display_refresh >= DISPLAY_REFRESH_MS) {
+      last_display_refresh = now;
+      render_display();
+    }
+  }
+
   if (now - last_heartbeat >= HEARTBEAT_MS) {
     last_heartbeat = now;
     if (has_latest_stats) {
