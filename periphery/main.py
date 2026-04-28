@@ -144,7 +144,7 @@ def scrape_host_stats() -> HostStats:
         timestamp_utc=datetime.now(timezone.utc).isoformat(timespec="seconds"),
         hostname=socket.gethostname(),
         ip=_get_primary_ipv4(),
-        cpu_load_percent=round(psutil.cpu_percent(interval=None), 1),
+        cpu_load_percent=float(round(psutil.cpu_percent(interval=None))),
         core_temp_c=_choose_core_temp_c(),
     )
 
@@ -155,7 +155,7 @@ def serialize_stats(stats: HostStats) -> str:
     The ESP32 side can parse one JSON object per newline.
     """
     payload: dict[str, Any] = asdict(stats)
-    payload["cpu_load_percent"] = round(float(payload["cpu_load_percent"]), 1)
+    payload["cpu_load_percent"] = int(round(float(payload["cpu_load_percent"])))
     return json.dumps(payload, separators=(",", ":"))
 
 

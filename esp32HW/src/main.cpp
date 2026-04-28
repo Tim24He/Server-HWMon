@@ -68,7 +68,7 @@ void render_offline_display() {
 void render_display() {
   char ip_text[32] = "waiting...";
   char temp_text[16] = "n/a";
-  char cpu_text[16] = "0.0%";
+  char cpu_text[16] = "0%";
   const char* title_text = "No Data";
 
   if (has_latest_stats) {
@@ -83,7 +83,7 @@ void render_display() {
     if (latest_stats.has_core_temp) {
       snprintf(temp_text, sizeof(temp_text), "%.1f\xC2\xB0""C", latest_stats.core_temp_c);
     }
-    snprintf(cpu_text, sizeof(cpu_text), "%.1f%%", latest_stats.cpu_load_percent);
+    snprintf(cpu_text, sizeof(cpu_text), "%.0f%%", latest_stats.cpu_load_percent);
   }
 
   auto centered_x = [](int area_width, const char* text, U8G2& display) -> int {
@@ -126,14 +126,14 @@ void render_display() {
 
   u8g2.drawXBM(6, 17, 17, 16, image_cloud_bits);
 
-  u8g2.drawXBM(0, 41, 16, 16, image_Temperature_bits);
+  u8g2.drawXBM(0, 40, 16, 16, image_Temperature_bits);
 
   u8g2.setFont(u8g2_font_profont17_tr);
-  u8g2.drawUTF8(centered_x_in_region(14, 48, temp_text, u8g2), 54, temp_text);
+  u8g2.drawUTF8(centered_x_in_region(14, 48, temp_text, u8g2), 53, temp_text);
 
-  u8g2.drawXBM(67, 41, 16, 16, image_Voltage_bits);
+  u8g2.drawXBM(67, 40, 16, 16, image_Voltage_bits);
 
-  u8g2.drawStr(centered_x_in_region(84, 44, cpu_text, u8g2), 54, cpu_text);
+  u8g2.drawStr(centered_x_in_region(84, 44, cpu_text, u8g2), 53, cpu_text);
 
   u8g2.drawXBM(10, 3, 8, 8, image_menu_bits);
 
