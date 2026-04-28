@@ -155,6 +155,7 @@ def serialize_stats(stats: HostStats) -> str:
     The ESP32 side can parse one JSON object per newline.
     """
     payload: dict[str, Any] = asdict(stats)
+    payload["cpu_load_percent"] = round(float(payload["cpu_load_percent"]), 1)
     return json.dumps(payload, separators=(",", ":"))
 
 
