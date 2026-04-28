@@ -98,6 +98,44 @@ pio run -t upload
 pio device monitor
 ```
 
+## One-Command Installers
+
+You can bootstrap the periphery agent on a fresh machine with a single command, similar to helper-script style installers.
+
+Before using these commands:
+
+- Replace `<owner>/<repo>` with your GitHub repository path.
+- Review installer scripts before running them in production.
+
+Linux (systemd service):
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-linux.sh)"
+```
+
+Windows (startup Scheduled Task as `SYSTEM`):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-windows.ps1 | iex"
+```
+
+Optional overrides:
+
+- Linux:
+  - `REPO_URL`, `BRANCH`, `INSTALL_DIR`, `SERVICE_NAME`, `RUN_USER`
+- Windows:
+  - `RepoUrl`, `Branch`, `InstallDir`, `TaskName`
+
+Examples:
+
+```bash
+REPO_URL=https://github.com/yourname/Server_Stat_UI.git BRANCH=main bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-linux.sh)"
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-windows.ps1))) -RepoUrl 'https://github.com/yourname/Server_Stat_UI.git' -Branch 'main'"
+```
+
 ## Serial Payload Format
 
 Each line is a JSON object:
