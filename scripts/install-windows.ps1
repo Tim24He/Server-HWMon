@@ -34,14 +34,32 @@ function Ensure-LocalConfig {
     }
 }
 
-function Get-PythonCommand {
+function Resolve-PythonLauncher {
     if (Get-Command py -ErrorAction SilentlyContinue) {
-        return "py -3"
+        & py -3 --version *> $null
+        if ($LASTEXITCODE -eq 0) {
+            return @{
+                Kind = "py"
+            }
+        }
     }
-    if (Get-Command python -ErrorAction SilentlyContinue) {
-        return "python"
+
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        $pythonPath = $pythonCmd.Source
+        # Ignore Microsoft Store alias shims which are not a real Python installation.
+        if ($pythonPath -and $pythonPath -notlike "*\WindowsApps\python*.exe") {
+            & $pythonPath --version *> $null
+            if ($LASTEXITCODE -eq 0) {
+                return @{
+                    Kind = "python"
+                    Path = $pythonPath
+                }
+            }
+        }
     }
-    throw "Python was not found. Install Python 3 first (including pip)."
+
+    throw "Python 3 was not found. Install Python from python.org (or via winget/choco), then rerun this installer."
 }
 
 function Clone-OrUpdateRepo {
@@ -59,12 +77,21 @@ function Clone-OrUpdateRepo {
 }
 
 function Setup-PythonEnv {
-    $pythonCmd = Get-PythonCommand
+    $pythonLauncher = Resolve-PythonLauncher
     $peripheryDir = Join-Path $InstallDir "periphery"
     $venvDir = Join-Path $peripheryDir ".venv"
     $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
-    & $env:ComSpec /c "$pythonCmd -m venv `"$venvDir`""
+    if ($pythonLauncher.Kind -eq "py") {
+        & py -3 -m venv "$venvDir"
+    } else {
+        & $pythonLauncher.Path -m venv "$venvDir"
+    }
+
+    if (-not (Test-Path $venvPython)) {
+        throw "Virtual environment creation failed. Python executable not found at '$venvPython'."
+    }
+
     & $venvPython -m pip install --no-cache-dir --upgrade pip wheel
     & $venvPython -m pip install --no-cache-dir psutil pyserial serial
 }
