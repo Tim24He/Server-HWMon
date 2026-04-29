@@ -1,20 +1,36 @@
 param(
-    [string]$RepoUrl = "https://github.com/REPLACE_ME/Server_Stat_UI.git",
+    [string]$RepoUrl = "https://github.com/Tim24He/Server-HWMon.git",
     [string]$Branch = "main",
-    [string]$InstallDir = "$env:ProgramData\ServerStatUI",
-    [string]$TaskName = "ServerStatPeripheryAgent"
+    [string]$InstallDir = "$env:ProgramData\ServerHWMon",
+    [string]$TaskName = "ServerHWMonPeripheryAgent"
 )
 
 $ErrorActionPreference = "Stop"
-
-if ($RepoUrl -like "*REPLACE_ME*") {
-    throw "RepoUrl is not set. Pass -RepoUrl with your GitHub repository URL."
-}
 
 function Assert-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
         throw "Required command '$Name' was not found in PATH."
+    }
+}
+
+function Ensure-LocalConfig {
+    $peripheryDir = Join-Path $InstallDir "periphery"
+    $localConfig = Join-Path $peripheryDir "periphery_config.local.json"
+    $exampleConfig = Join-Path $peripheryDir "periphery_config.local.example.json"
+    $defaultConfig = Join-Path $peripheryDir "periphery_config.json"
+
+    if (Test-Path $localConfig) {
+        return
+    }
+
+    if (Test-Path $exampleConfig) {
+        Copy-Item -LiteralPath $exampleConfig -Destination $localConfig
+        return
+    }
+
+    if (Test-Path $defaultConfig) {
+        Copy-Item -LiteralPath $defaultConfig -Destination $localConfig
     }
 }
 
@@ -56,7 +72,7 @@ function Setup-PythonEnv {
 function Install-StartupTask {
     $peripheryDir = Join-Path $InstallDir "periphery"
     $venvPython = Join-Path $peripheryDir ".venv\Scripts\python.exe"
-    $mainPy = Join-Path $peripheryDir "main.py"
+    $mainPy = Join-Path $peripheryDir "periphery_agent.py"
 
     $action = New-ScheduledTaskAction -Execute $venvPython -Argument "`"$mainPy`""
     $trigger = New-ScheduledTaskTrigger -AtStartup
@@ -70,6 +86,7 @@ function Install-StartupTask {
 Assert-Command git
 
 Clone-OrUpdateRepo
+Ensure-LocalConfig
 Setup-PythonEnv
 Install-StartupTask
 

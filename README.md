@@ -1,182 +1,82 @@
-# Server Stat UI
+# Server HWMon
 
-Server Stat UI is a two-part system for showing host machine telemetry on a small I2C OLED connected to a Seeed XIAO ESP32S3.
+![Platform](https://img.shields.io/badge/platform-ESP32S3-0A7CFF)
+![Host](https://img.shields.io/badge/host-Python-3776AB)
+![Display](https://img.shields.io/badge/display-I2C%20OLED-222222)
+![Build](https://img.shields.io/badge/build-PlatformIO-F5822A)
 
-- `periphery/` runs on the host PC, scrapes hardware stats, and streams JSON over USB serial.
-- `esp32HW/` runs on the ESP32, decodes incoming JSON, and renders a UI on a 128x64 OLED.
+Host telemetry on a small OLED via ESP32.
 
-## Features
+- `periphery/`: Python agent on your host machine
+- `esp32HW/`: ESP32 firmware for OLED rendering
 
-- Host telemetry scraper:
-  - CPU load percentage (integer, rounded)
-  - Core/package temperature in Celsius (integer, rounded, or `null` if unavailable)
-  - Hostname and primary outbound IPv4
-- Robust serial protocol:
-  - One JSON object per line
-  - Graceful handling of missing or extra JSON fields
-- OLED dashboard:
-  - Dynamic text centering for hostname and IP
-  - Data values update on every valid incoming packet
-  - Offline screen shown when data is stale
-- Runtime config on host via `periphery/periphery_config.json`
+## Install
 
-## Repository Layout
+### One-command installer scripts
 
-- `periphery/`
-  - `main.py` host scraper + serial sender
-  - `periphery_config.json` runtime config file
-  - `pyproject.toml` / `uv.lock` Python environment
-- `esp32HW/`
-  - `src/main.cpp` firmware
-  - `platformio.ini` PlatformIO environment and libraries
-  - `fonts/README.md` notes for optional custom font conversion
+Linux:
 
-## Hardware
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Tim24He/Server-HWMon/main/scripts/install-linux.sh)"
+```
 
-- Board: Seeed XIAO ESP32S3
-- Display: 0.96" I2C OLED (128x64)
+Windows:
 
-Recommended wiring on XIAO ESP32S3:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Tim24He/Server-HWMon/main/scripts/install-windows.ps1 | iex"
+```
 
-- `SDA` -> `D4`
-- `SCL` -> `D5`
-- `GND` -> `GND`
-- `VCC` -> `3V3` (recommended)
+What these do:
 
-## Data Flow
+- Clone/update the repo
+- Create the periphery virtual environment
+- Install Python dependencies
+- Register persistent startup runtime
 
-1. Host script samples system stats.
-2. Script serializes them into compact JSON.
-3. JSON is sent as newline-delimited frames over USB serial.
-4. ESP32 reads line frames, decodes selected fields, and updates OLED.
-5. If valid frames stop arriving for a timeout window, firmware switches to an offline screen.
+### Manual install
 
-## Host Setup (Python + uv)
-
-From repository root:
+Host agent:
 
 ```powershell
 uv sync --project periphery
-uv run --project periphery python periphery/main.py
+uv run --project periphery python periphery/periphery_agent.py
 ```
 
-Or from inside `periphery/`:
-
-```powershell
-uv sync
-uv run python main.py
-```
-
-### Host Runtime Configuration
-
-Edit `periphery/periphery_config.json`:
-
-- `DEBUG_MODE` (`true`/`false`)
-- `POLL_INTERVAL_SECONDS`
-- `RECONNECT_DELAY_SECONDS`
-- `SERIAL_BAUDRATE`
-- `ESP32_KEYWORDS`
-- `ESP32_VID_HINTS`
-
-`DEBUG_MODE: true` prints JSON to console instead of opening serial.
-
-## Firmware Setup (PlatformIO)
-
-From repository root:
+Firmware:
 
 ```powershell
 pio run -d esp32HW
 pio run -d esp32HW -t upload
-pio device monitor -d esp32HW
 ```
 
-Or from inside `esp32HW/`:
+## Architecture
 
-```powershell
-pio run
-pio run -t upload
-pio device monitor
+```mermaid
+flowchart LR
+    A[Host PC: periphery_agent.py] -->|USB Serial JSON| B[ESP32S3 Firmware]
+    B --> C[0.96 inch I2C OLED]
 ```
 
-## One-Command Installers
+## Hardware Wiring
 
-You can bootstrap the periphery agent on a fresh machine with a single command, similar to helper-script style installers.
+- `SDA` -> `D4`
+- `SCL` -> `D5`
+- `GND` -> `GND`
+- `VCC` -> `3V3`
 
-Before using these commands:
+## Configuration
 
-- Replace `<owner>/<repo>` with your GitHub repository path.
-- Review installer scripts before running them in production.
+Use `periphery/periphery_config.local.json` for machine-local settings.  
+If absent, defaults are loaded from `periphery/periphery_config.json`.
 
-Linux (systemd service):
+Common settings:
 
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-linux.sh)"
-```
+- `DEBUG_MODE`
+- `POLL_INTERVAL_SECONDS`
+- `SERIAL_BAUDRATE`
 
-Windows (startup Scheduled Task as `SYSTEM`):
+## Notes
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-windows.ps1 | iex"
-```
-
-Optional overrides:
-
-- Linux:
-  - `REPO_URL`, `BRANCH`, `INSTALL_DIR`, `SERVICE_NAME`, `RUN_USER`
-- Windows:
-  - `RepoUrl`, `Branch`, `InstallDir`, `TaskName`
-
-Examples:
-
-```bash
-REPO_URL=https://github.com/yourname/Server_Stat_UI.git BRANCH=main bash -c "$(curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-linux.sh)"
-```
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create((irm https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/install-windows.ps1))) -RepoUrl 'https://github.com/yourname/Server_Stat_UI.git' -Branch 'main'"
-```
-
-## Serial Payload Format
-
-Each line is a JSON object:
-
-```json
-{
-  "timestamp_utc": "2026-04-28T19:40:11+00:00",
-  "hostname": "MY-PC",
-  "ip": "192.168.1.100",
-  "cpu_load_percent": 37,
-  "core_temp_c": 64
-}
-```
-
-Notes:
-
-- `cpu_load_percent` is sent as an integer.
-- `core_temp_c` is sent as an integer or `null`.
-
-## Fonts
-
-The current layout uses built-in U8g2 fonts.  
-If you want custom `.bdf` fonts, see `esp32HW/fonts/README.md` for conversion workflow.
-
-## Current Behavior Summary
-
-- Firmware is tuned for production display updates:
-  - I2C clock set to 400kHz
-  - Display refresh triggered by valid incoming packets
-  - Serial logging minimized/removed in runtime path
-- Offline mode appears automatically when data becomes stale.
-
-## Troubleshooting
-
-- No data on OLED:
-  - Verify USB serial connection and baud (`115200` by default).
-  - Confirm host script detects the ESP32 port.
-  - Check `DEBUG_MODE` is `false` if expecting serial output.
-- OLED not responding:
-  - Recheck I2C wiring and panel address/controller compatibility.
-  - Verify power rail and ground continuity.
-- Build issues:
-  - Ensure PlatformIO and required toolchains are installed.
-  - Rebuild after library updates in `platformio.ini`.
+- CPU and temperature are sent as rounded integers.
+- Firmware switches to an offline screen when valid data is stale.
+- Installer scripts are safe to rerun for updates.

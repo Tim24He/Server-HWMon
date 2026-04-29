@@ -21,7 +21,8 @@ SERIAL_BAUDRATE = 115200
 ESP32_KEYWORDS = ("esp32", "espressif", "xiao", "seeed")
 ESP32_VID_HINTS = {0x303A, 0x2886}
 
-LOCAL_CONFIG_FILE = Path(__file__).with_name("periphery_config.json")
+DEFAULT_CONFIG_FILE = Path(__file__).with_name("periphery_config.json")
+LOCAL_OVERRIDE_CONFIG_FILE = Path(__file__).with_name("periphery_config.local.json")
 
 
 @dataclass(slots=True)
@@ -45,7 +46,7 @@ def _get_primary_ipv4() -> str:
         probe.close()
 
 
-def _load_local_runtime_config() -> None:
+def _apply_runtime_config(data: dict[str, Any], source_name: str) -> None:
     global POLL_INTERVAL_SECONDS
     global RECONNECT_DELAY_SECONDS
     global SERIAL_BAUDRATE
@@ -53,17 +54,8 @@ def _load_local_runtime_config() -> None:
     global ESP32_VID_HINTS
     global DEBUG_MODE
 
-    if not LOCAL_CONFIG_FILE.exists():
-        return
-
-    try:
-        data = json.loads(LOCAL_CONFIG_FILE.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"Failed to load {LOCAL_CONFIG_FILE.name}: {exc}. Using defaults.")
-        return
-
     if not isinstance(data, dict):
-        print(f"{LOCAL_CONFIG_FILE.name} must contain a JSON object. Using defaults.")
+        print(f"{source_name} must contain a JSON object. Ignoring this file.")
         return
 
     poll_interval_seconds = data.get("POLL_INTERVAL_SECONDS")
@@ -104,6 +96,19 @@ def _load_local_runtime_config() -> None:
     debug_mode = data.get("DEBUG_MODE")
     if isinstance(debug_mode, bool):
         DEBUG_MODE = debug_mode
+
+
+def _load_runtime_config() -> None:
+    # Load defaults first, then machine-local overrides.
+    for config_file in (DEFAULT_CONFIG_FILE, LOCAL_OVERRIDE_CONFIG_FILE):
+        if not config_file.exists():
+            continue
+        try:
+            data = json.loads(config_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"Failed to load {config_file.name}: {exc}. Ignoring this file.")
+            continue
+        _apply_runtime_config(data, config_file.name)
 
 
 def _choose_core_temp_c() -> float | None:
@@ -243,7 +248,7 @@ def _run_serial_loop() -> None:
 def main() -> None:
     # Prime cpu_percent to avoid a misleading first reading.
     psutil.cpu_percent(interval=None)
-    _load_local_runtime_config()
+    _load_runtime_config()
 
     if DEBUG_MODE:
         _run_debug_loop()
