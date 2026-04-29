@@ -147,9 +147,11 @@ try {
     Write-Host "Install successful."
 } catch {
     Write-Progress -Activity "Server HWMon Install" -Completed
-    Write-Error "Install failed. Log: $LogPath"
+    Write-Host "Install failed. Log: $LogPath"
     if (Test-Path $LogPath) {
+        Write-Host "---- Last log lines ----"
         Get-Content -Path $LogPath -Tail 120
+        Write-Host "------------------------"
     }
-    throw
+    exit 1
 }
