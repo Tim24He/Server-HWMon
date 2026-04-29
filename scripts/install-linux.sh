@@ -101,8 +101,19 @@ setup_python_env() {
   local venv_dir="${periphery_dir}/.venv"
 
   python3 -m venv "${venv_dir}"
-  "${venv_dir}/bin/python" -m pip install --upgrade pip wheel
-  "${venv_dir}/bin/pip" install psutil pyserial serial
+  "${venv_dir}/bin/python" -m pip install --no-cache-dir --upgrade pip wheel
+  "${venv_dir}/bin/pip" install --no-cache-dir psutil pyserial serial
+}
+
+cleanup_install_artifacts() {
+  local user_home
+  user_home="$(getent passwd "${RUN_USER}" | cut -d: -f6 || true)"
+  if [[ -n "${user_home}" && -d "${user_home}/.cache/pip" ]]; then
+    rm -rf "${user_home}/.cache/pip"
+  fi
+  if [[ -d "/root/.cache/pip" ]]; then
+    rm -rf /root/.cache/pip
+  fi
 }
 
 install_service() {
@@ -123,8 +134,8 @@ WorkingDirectory=${periphery_dir}
 ExecStart=${periphery_dir}/.venv/bin/python ${periphery_dir}/periphery_agent.py
 Restart=always
 RestartSec=3
-StandardOutput=journal
-StandardError=journal
+StandardOutput=null
+StandardError=null
 
 [Install]
 WantedBy=multi-user.target
@@ -143,6 +154,7 @@ main() {
   clone_or_update_repo
   ensure_local_config
   setup_python_env
+  cleanup_install_artifacts
   install_service
   echo "Install complete."
   echo "Service: ${SERVICE_NAME}.service"

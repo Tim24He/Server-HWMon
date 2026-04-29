@@ -65,16 +65,30 @@ function Setup-PythonEnv {
     $venvPython = Join-Path $venvDir "Scripts\python.exe"
 
     & $env:ComSpec /c "$pythonCmd -m venv `"$venvDir`""
-    & $venvPython -m pip install --upgrade pip wheel
-    & $venvPython -m pip install psutil pyserial serial
+    & $venvPython -m pip install --no-cache-dir --upgrade pip wheel
+    & $venvPython -m pip install --no-cache-dir psutil pyserial serial
+}
+
+function Cleanup-InstallArtifacts {
+    $pipCachePaths = @(
+        (Join-Path $env:LocalAppData "pip\Cache"),
+        (Join-Path $env:ProgramData "pip\Cache"),
+        (Join-Path $env:USERPROFILE "AppData\Local\pip\Cache")
+    )
+
+    foreach ($cachePath in $pipCachePaths) {
+        if (Test-Path $cachePath) {
+            Remove-Item -LiteralPath $cachePath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 function Install-StartupTask {
     $peripheryDir = Join-Path $InstallDir "periphery"
     $venvPython = Join-Path $peripheryDir ".venv\Scripts\python.exe"
     $mainPy = Join-Path $peripheryDir "periphery_agent.py"
-
-    $action = New-ScheduledTaskAction -Execute $venvPython -Argument "`"$mainPy`""
+    $taskCmd = "`"$venvPython`" `"$mainPy`" 1>NUL 2>&1"
+    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c $taskCmd"
     $trigger = New-ScheduledTaskTrigger -AtStartup
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
@@ -88,6 +102,7 @@ Assert-Command git
 Clone-OrUpdateRepo
 Ensure-LocalConfig
 Setup-PythonEnv
+Cleanup-InstallArtifacts
 Install-StartupTask
 
 Write-Host "Install complete."
