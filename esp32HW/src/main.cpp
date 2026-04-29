@@ -6,6 +6,9 @@
 
 static constexpr size_t SERIAL_LINE_BUFFER_SIZE = 384;
 static constexpr unsigned long DATA_STALE_TIMEOUT_MS = 3000;
+static constexpr unsigned long PIXEL_SHIFT_INTERVAL_MS = 10UL * 60UL * 1000UL;
+static constexpr int DISPLAY_WIDTH = 128;
+static constexpr int DISPLAY_HEIGHT = 64;
 char serial_line_buffer[SERIAL_LINE_BUFFER_SIZE];
 size_t serial_line_length = 0;
 
@@ -49,6 +52,46 @@ HostStats latest_stats;
 bool has_latest_stats = false;
 unsigned long last_valid_data_ms = 0;
 bool showing_offline_screen = true;
+unsigned long last_pixel_shift_ms = 0;
+int display_shift_x = 0;
+int display_shift_y = 0;
+
+int clamp_int(int value, int min_value, int max_value) {
+  if (value < min_value) {
+    return min_value;
+  }
+  if (value > max_value) {
+    return max_value;
+  }
+  return value;
+}
+
+void draw_rframe_shifted(int x, int y, int w, int h, int r) {
+  const int max_x = DISPLAY_WIDTH - w;
+  const int max_y = DISPLAY_HEIGHT - h;
+  const int sx = clamp_int(x + display_shift_x, 0, max_x);
+  const int sy = clamp_int(y + display_shift_y, 0, max_y);
+  u8g2.drawRFrame(sx, sy, w, h, r);
+}
+
+void draw_xbm_shifted(int x, int y, int w, int h, const uint8_t* bitmap) {
+  const int max_x = DISPLAY_WIDTH - w;
+  const int max_y = DISPLAY_HEIGHT - h;
+  const int sx = clamp_int(x + display_shift_x, 0, max_x);
+  const int sy = clamp_int(y + display_shift_y, 0, max_y);
+  u8g2.drawXBM(sx, sy, w, h, bitmap);
+}
+
+void draw_str_shifted(int x, int y, const char* text, bool utf8 = false) {
+  const int text_width = u8g2.getStrWidth(text);
+  const int sx = clamp_int(x + display_shift_x, 0, DISPLAY_WIDTH - text_width);
+  const int sy = clamp_int(y + display_shift_y, 0, DISPLAY_HEIGHT - 1);
+  if (utf8) {
+    u8g2.drawUTF8(sx, sy, text);
+  } else {
+    u8g2.drawStr(sx, sy, text);
+  }
+}
 
 void render_offline_display() {
   u8g2.clearBuffer();
@@ -56,10 +99,10 @@ void render_offline_display() {
   // [BEGIN lopaka generated]
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(1);
-  u8g2.drawXBM(57, 14, 15, 16, image_device_power_button_bits);
+  draw_xbm_shifted(57, 14, 15, 16, image_device_power_button_bits);
 
   u8g2.setFont(u8g2_font_profont17_tr);
-  u8g2.drawStr(33, 51, "Offline");
+  draw_str_shifted(33, 51, "Offline");
 
   u8g2.sendBuffer();
   // [END lopaka generated]
@@ -110,32 +153,32 @@ void render_display() {
   // [BEGIN lopaka generated]
   u8g2.setFontMode(1);
   u8g2.setBitmapMode(1);
-  u8g2.drawRFrame(0, 0, 128, 14, 5);
+  draw_rframe_shifted(0, 0, 128, 14, 5);
 
   u8g2.setFont(u8g2_font_haxrcorp4089_tr);
-  u8g2.drawStr(centered_x(128, title_text, u8g2), 10, title_text);
+  draw_str_shifted(centered_x(128, title_text, u8g2), 10, title_text);
 
-  u8g2.drawRFrame(0, 16, 128, 14, 5);
+  draw_rframe_shifted(0, 16, 128, 14, 5);
 
-  u8g2.drawRFrame(0, 32, 62, 32, 5);
+  draw_rframe_shifted(0, 32, 62, 32, 5);
 
-  u8g2.drawRFrame(66, 32, 62, 32, 5);
+  draw_rframe_shifted(66, 32, 62, 32, 5);
 
   u8g2.setFont(u8g2_font_5x7_tr);
-  u8g2.drawStr(centered_x(128, ip_text, u8g2), 26, ip_text);
+  draw_str_shifted(centered_x(128, ip_text, u8g2), 26, ip_text);
 
-  u8g2.drawXBM(6, 17, 17, 16, image_cloud_bits);
+  draw_xbm_shifted(6, 17, 17, 16, image_cloud_bits);
 
-  u8g2.drawXBM(0, 40, 16, 16, image_Temperature_bits);
+  draw_xbm_shifted(0, 40, 16, 16, image_Temperature_bits);
 
   u8g2.setFont(u8g2_font_profont17_tr);
-  u8g2.drawUTF8(centered_x_in_region(14, 48, temp_text, u8g2), 53, temp_text);
+  draw_str_shifted(centered_x_in_region(14, 48, temp_text, u8g2), 53, temp_text, true);
 
-  u8g2.drawXBM(67, 40, 16, 16, image_Voltage_bits);
+  draw_xbm_shifted(67, 40, 16, 16, image_Voltage_bits);
 
-  u8g2.drawStr(centered_x_in_region(84, 44, cpu_text, u8g2), 53, cpu_text);
+  draw_str_shifted(centered_x_in_region(84, 44, cpu_text, u8g2), 53, cpu_text);
 
-  u8g2.drawXBM(10, 3, 8, 8, image_menu_bits);
+  draw_xbm_shifted(10, 3, 8, 8, image_menu_bits);
 
   u8g2.sendBuffer();
   // [END lopaka generated]
@@ -235,13 +278,32 @@ void setup() {
   Wire.begin();
   Wire.setClock(400000);
   u8g2.begin();
+  last_pixel_shift_ms = millis();
   render_offline_display();
 }
 
 void loop() {
   poll_serial_input();
 
-  if (!showing_offline_screen && (millis() - last_valid_data_ms >= DATA_STALE_TIMEOUT_MS)) {
+  const unsigned long now = millis();
+  if (now - last_pixel_shift_ms >= PIXEL_SHIFT_INTERVAL_MS) {
+    last_pixel_shift_ms = now;
+    // Alternate between two safe states. Helpers clamp anything at edges.
+    if (display_shift_x == 0 && display_shift_y == 0) {
+      display_shift_x = 1;
+      display_shift_y = 1;
+    } else {
+      display_shift_x = 0;
+      display_shift_y = 0;
+    }
+    if (showing_offline_screen) {
+      render_offline_display();
+    } else {
+      render_display();
+    }
+  }
+
+  if (!showing_offline_screen && (now - last_valid_data_ms >= DATA_STALE_TIMEOUT_MS)) {
     showing_offline_screen = true;
     render_offline_display();
   }
