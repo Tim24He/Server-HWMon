@@ -80,3 +80,24 @@ Common settings:
 - CPU and temperature are sent as rounded integers.
 - Firmware switches to an offline screen when valid data is stale.
 - Installer scripts are safe to rerun for updates.
+
+## Uninstall
+
+Linux:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Tim24He/Server-HWMon/main/scripts/uninstall-linux.sh)"
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/Tim24He/Server-HWMon/main/scripts/uninstall-windows.ps1 | iex"
+```
+
+Optional flags:
+
+- Linux:
+  - `REMOVE_USER=true` to also remove the service account user.
+- Windows:
+  - `-RemoveInstallDir $false` to keep files and only remove the scheduled task.
