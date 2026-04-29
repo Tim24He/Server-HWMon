@@ -14,6 +14,13 @@ Host telemetry on a small OLED via ESP32.
 
 ### One-command installer scripts
 
+Run these from an elevated shell:
+
+- Linux: root (or `sudo`)
+- Windows: Run PowerShell as Administrator
+
+Without elevated permissions, service/task registration will fail.
+
 Linux:
 
 ```bash
