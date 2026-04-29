@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$LogPath = Join-Path $env:TEMP ("serverhwmon-install-" + [guid]::NewGuid().ToString("N") + ".log")
 
 function Assert-Command {
     param([string]$Name)
@@ -125,13 +126,30 @@ function Install-StartupTask {
 }
 
 Assert-Command git
+$steps = @(
+    @{ Label = "Checking prerequisites"; Action = { Assert-Command git } },
+    @{ Label = "Syncing repository"; Action = { Clone-OrUpdateRepo } },
+    @{ Label = "Preparing local config"; Action = { Ensure-LocalConfig } },
+    @{ Label = "Setting up Python environment"; Action = { Setup-PythonEnv } },
+    @{ Label = "Cleaning install artifacts"; Action = { Cleanup-InstallArtifacts } },
+    @{ Label = "Installing startup task"; Action = { Install-StartupTask } }
+)
 
-Clone-OrUpdateRepo
-Ensure-LocalConfig
-Setup-PythonEnv
-Cleanup-InstallArtifacts
-Install-StartupTask
-
-Write-Host "Install complete."
-Write-Host "Task: $TaskName"
-Write-Host "Check: Get-ScheduledTask -TaskName `"$TaskName`""
+try {
+    for ($i = 0; $i -lt $steps.Count; $i++) {
+        $percent = [int](($i + 1) * 100 / $steps.Count)
+        Write-Host ("[{0}%] {1}" -f $percent, $steps[$i].Label)
+        Write-Progress -Activity "Server HWMon Install" -Status $steps[$i].Label -PercentComplete $percent
+        & $steps[$i].Action *>> $LogPath
+    }
+    Write-Progress -Activity "Server HWMon Install" -Completed
+    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    Write-Host "Install successful."
+} catch {
+    Write-Progress -Activity "Server HWMon Install" -Completed
+    Write-Error "Install failed. Log: $LogPath"
+    if (Test-Path $LogPath) {
+        Get-Content -Path $LogPath -Tail 120
+    }
+    throw
+}

@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$LogPath = Join-Path $env:TEMP ("serverhwmon-uninstall-" + [guid]::NewGuid().ToString("N") + ".log")
 
 function Remove-StartupTask {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
@@ -25,7 +26,26 @@ function Remove-InstalledFiles {
     }
 }
 
-Remove-StartupTask
-Remove-InstalledFiles
+$steps = @(
+    @{ Label = "Removing startup task"; Action = { Remove-StartupTask } },
+    @{ Label = "Removing installed files"; Action = { Remove-InstalledFiles } }
+)
 
-Write-Host "Uninstall complete."
+try {
+    for ($i = 0; $i -lt $steps.Count; $i++) {
+        $percent = [int](($i + 1) * 100 / $steps.Count)
+        Write-Host ("[{0}%] {1}" -f $percent, $steps[$i].Label)
+        Write-Progress -Activity "Server HWMon Uninstall" -Status $steps[$i].Label -PercentComplete $percent
+        & $steps[$i].Action *>> $LogPath
+    }
+    Write-Progress -Activity "Server HWMon Uninstall" -Completed
+    Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
+    Write-Host "Uninstall successful."
+} catch {
+    Write-Progress -Activity "Server HWMon Uninstall" -Completed
+    Write-Error "Uninstall failed. Log: $LogPath"
+    if (Test-Path $LogPath) {
+        Get-Content -Path $LogPath -Tail 120
+    }
+    throw
+}

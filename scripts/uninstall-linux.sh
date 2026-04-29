@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+LOG_FILE="$(mktemp -t serverhwmon-uninstall-XXXX.log)"
+trap 'echo "Uninstall failed. See details below:" >&2; tail -n 80 "${LOG_FILE}" >&2' ERR
 
 # Server HWMon Periphery Uninstaller (Linux)
 # Intended usage:
@@ -52,11 +54,28 @@ remove_user_if_requested() {
 }
 
 main() {
-  require_root
-  remove_service
-  remove_files
-  remove_user_if_requested
-  echo "Uninstall complete."
+  local total_steps=4
+  local current_step=0
+  run_step() {
+    local label="$1"
+    shift
+    current_step=$((current_step + 1))
+    local percent=$((current_step * 100 / total_steps))
+    local filled=$((percent / 5))
+    local bar
+    bar="$(printf '%*s' "${filled}" '' | tr ' ' '#')"
+    bar="${bar}$(printf '%*s' "$((20 - filled))" '' | tr ' ' '-')"
+    echo "[${bar}] ${percent}% ${label}"
+    "$@" >>"${LOG_FILE}" 2>&1
+  }
+
+  run_step "Checking privileges" require_root
+  run_step "Removing service" remove_service
+  run_step "Removing installed files" remove_files
+  run_step "Removing service user (optional)" remove_user_if_requested
+
+  rm -f "${LOG_FILE}"
+  echo "Uninstall successful."
 }
 
 main "$@"

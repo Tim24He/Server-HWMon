@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
+LOG_FILE="$(mktemp -t serverhwmon-install-XXXX.log)"
+trap 'echo "Install failed. See details below:" >&2; tail -n 80 "${LOG_FILE}" >&2' ERR
 
 # Server HWMon Periphery Installer (Linux)
 # Intended usage:
@@ -147,18 +149,33 @@ EOF
 }
 
 main() {
-  require_root
-  validate_repo_url
-  install_packages
-  ensure_user
-  clone_or_update_repo
-  ensure_local_config
-  setup_python_env
-  cleanup_install_artifacts
-  install_service
-  echo "Install complete."
-  echo "Service: ${SERVICE_NAME}.service"
-  echo "Status: systemctl status ${SERVICE_NAME}.service"
+  local total_steps=9
+  local current_step=0
+  run_step() {
+    local label="$1"
+    shift
+    current_step=$((current_step + 1))
+    local percent=$((current_step * 100 / total_steps))
+    local filled=$((percent / 5))
+    local bar
+    bar="$(printf '%*s' "${filled}" '' | tr ' ' '#')"
+    bar="${bar}$(printf '%*s' "$((20 - filled))" '' | tr ' ' '-')"
+    echo "[${bar}] ${percent}% ${label}"
+    "$@" >>"${LOG_FILE}" 2>&1
+  }
+
+  run_step "Checking privileges" require_root
+  run_step "Validating configuration" validate_repo_url
+  run_step "Installing base packages" install_packages
+  run_step "Ensuring service user" ensure_user
+  run_step "Syncing repository" clone_or_update_repo
+  run_step "Preparing local config" ensure_local_config
+  run_step "Setting up Python environment" setup_python_env
+  run_step "Cleaning install artifacts" cleanup_install_artifacts
+  run_step "Installing and starting service" install_service
+
+  rm -f "${LOG_FILE}"
+  echo "Install successful."
 }
 
 main "$@"
