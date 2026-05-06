@@ -8,6 +8,17 @@ param(
 $ErrorActionPreference = "Stop"
 $LogPath = Join-Path $env:TEMP ("serverhwmon-install-" + [guid]::NewGuid().ToString("N") + ".log")
 
+function Write-InstallLog {
+    param([string]$Message)
+    $line = ("[{0}] {1}" -f (Get-Date -Format o), $Message)
+    try {
+        Add-Content -Path $LogPath -Value $line -Encoding UTF8
+    } catch {
+        # Last-resort fallback to console if filesystem logging is unavailable.
+        Write-Host $line
+    }
+}
+
 function Assert-Admin {
     $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
@@ -151,17 +162,26 @@ $steps = @(
 )
 
 try {
+    Write-InstallLog "Installer started."
+    Write-InstallLog ("PowerShell version: " + $PSVersionTable.PSVersion.ToString())
+    Write-InstallLog ("InstallDir: " + $InstallDir)
+    Write-InstallLog ("RepoUrl: " + $RepoUrl + " Branch: " + $Branch)
+
     for ($i = 0; $i -lt $steps.Count; $i++) {
         $percent = [int](($i + 1) * 100 / $steps.Count)
-        Write-Host ("[{0}%] {1}" -f $percent, $steps[$i].Label)
+        $stepLabel = $steps[$i].Label
+        Write-Host ("[{0}%] {1}" -f $percent, $stepLabel)
         Write-Progress -Activity "Server HWMon Install" -Status $steps[$i].Label -PercentComplete $percent
+        Write-InstallLog ("BEGIN step: " + $stepLabel)
         try {
-            & $steps[$i].Action *>> $LogPath
+            # Execute directly so thrown exceptions reliably flow into catch.
+            & $steps[$i].Action
+            Write-InstallLog ("END step: " + $stepLabel + " (ok)")
         } catch {
-            Add-Content -Path $LogPath -Value ("[{0}] FAILED: {1}" -f (Get-Date -Format o), $steps[$i].Label)
-            Add-Content -Path $LogPath -Value ("Exception: " + $_.Exception.Message)
+            Write-InstallLog ("FAILED step: " + $stepLabel)
+            Write-InstallLog ("Exception: " + $_.Exception.Message)
             if ($_.ScriptStackTrace) {
-                Add-Content -Path $LogPath -Value ("Stack: " + $_.ScriptStackTrace)
+                Write-InstallLog ("Stack: " + $_.ScriptStackTrace)
             }
             throw
         }
@@ -173,7 +193,7 @@ try {
     Write-Progress -Activity "Server HWMon Install" -Completed
     Write-Host "Install failed. Log: $LogPath"
     Write-Host ("Error: " + $_.Exception.Message)
-    Add-Content -Path $LogPath -Value ("[{0}] INSTALL FAILED: {1}" -f (Get-Date -Format o), $_.Exception.Message)
+    Write-InstallLog ("INSTALL FAILED: " + $_.Exception.Message)
     if (Test-Path $LogPath) {
         Write-Host "---- Last log lines ----"
         Get-Content -Path $LogPath -Tail 120
