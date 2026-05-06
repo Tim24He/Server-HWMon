@@ -45,7 +45,6 @@ ensure_local_config() {
   local periphery_dir="${INSTALL_DIR}/periphery"
   local local_cfg="${periphery_dir}/periphery_config.local.json"
   local example_cfg="${periphery_dir}/periphery_config.local.example.json"
-  local default_cfg="${periphery_dir}/periphery_config.json"
 
   if [[ -f "${local_cfg}" ]]; then
     return
@@ -53,11 +52,6 @@ ensure_local_config() {
 
   if [[ -f "${example_cfg}" ]]; then
     cp "${example_cfg}" "${local_cfg}"
-    return
-  fi
-
-  if [[ -f "${default_cfg}" ]]; then
-    cp "${default_cfg}" "${local_cfg}"
   fi
 }
 

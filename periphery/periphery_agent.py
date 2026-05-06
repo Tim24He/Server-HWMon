@@ -25,7 +25,6 @@ SERIAL_FORCE_FLUSH = False
 ESP32_KEYWORDS = ("esp32", "espressif", "xiao", "seeed")
 ESP32_VID_HINTS = {0x303A, 0x2886}
 
-DEFAULT_CONFIG_FILE = Path(__file__).with_name("periphery_config.json")
 LOCAL_OVERRIDE_CONFIG_FILE = Path(__file__).with_name("periphery_config.local.json")
 
 
@@ -142,15 +141,16 @@ def _apply_runtime_config(data: dict[str, Any], source_name: str) -> None:
 
 
 def _load_runtime_config() -> None:
-    for config_file in (DEFAULT_CONFIG_FILE, LOCAL_OVERRIDE_CONFIG_FILE):
-        if not config_file.exists():
-            continue
-        try:
-            data = json.loads(config_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            print(f"Failed to load {config_file.name}: {exc}. Ignoring this file.")
-            continue
-        _apply_runtime_config(data, config_file.name)
+    if not LOCAL_OVERRIDE_CONFIG_FILE.exists():
+        return
+
+    try:
+        data = json.loads(LOCAL_OVERRIDE_CONFIG_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Failed to load {LOCAL_OVERRIDE_CONFIG_FILE.name}: {exc}. Ignoring this file.")
+        return
+
+    _apply_runtime_config(data, LOCAL_OVERRIDE_CONFIG_FILE.name)
 
 
 def _choose_core_temp_c() -> float | None:

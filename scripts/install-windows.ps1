@@ -38,7 +38,6 @@ function Ensure-LocalConfig {
     $peripheryDir = Join-Path $InstallDir "periphery"
     $localConfig = Join-Path $peripheryDir "periphery_config.local.json"
     $exampleConfig = Join-Path $peripheryDir "periphery_config.local.example.json"
-    $defaultConfig = Join-Path $peripheryDir "periphery_config.json"
 
     if (Test-Path $localConfig) {
         return
@@ -46,11 +45,6 @@ function Ensure-LocalConfig {
 
     if (Test-Path $exampleConfig) {
         Copy-Item -LiteralPath $exampleConfig -Destination $localConfig
-        return
-    }
-
-    if (Test-Path $defaultConfig) {
-        Copy-Item -LiteralPath $defaultConfig -Destination $localConfig
     }
 }
 

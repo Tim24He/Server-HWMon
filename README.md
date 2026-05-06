@@ -74,12 +74,12 @@ flowchart LR
 ## Configuration
 
 Use `periphery/periphery_config.local.json` for machine-local settings.  
-If absent, defaults are loaded from `periphery/periphery_config.json`.
+If absent, the agent uses built-in defaults from `periphery_agent.py`.
 
 Common settings:
 
 - `DEBUG_MODE`
-- `POLL_INTERVAL_SECONDS`
+- `EXPORT_INTERVAL_SECONDS` (or legacy alias `POLL_INTERVAL_SECONDS`)
 - `SERIAL_BAUDRATE`
 
 ## Notes
