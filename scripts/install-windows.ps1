@@ -74,14 +74,21 @@ function Resolve-PythonLauncher {
 function Clone-OrUpdateRepo {
     if (Test-Path "$InstallDir\.git") {
         git -C $InstallDir fetch --all --prune
+        if ($LASTEXITCODE -ne 0) { throw "git fetch failed for '$InstallDir'." }
         git -C $InstallDir checkout $Branch
+        if ($LASTEXITCODE -ne 0) { throw "git checkout '$Branch' failed in '$InstallDir'." }
         git -C $InstallDir pull --ff-only origin $Branch
+        if ($LASTEXITCODE -ne 0) { throw "git pull failed for branch '$Branch' in '$InstallDir'." }
     } else {
+        if ((Test-Path $InstallDir) -and (Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+            throw "InstallDir '$InstallDir' exists and is not a git repository. Remove it or choose a different -InstallDir."
+        }
         $parent = Split-Path -Parent $InstallDir
         if (-not (Test-Path $parent)) {
             New-Item -ItemType Directory -Path $parent | Out-Null
         }
         git clone --branch $Branch $RepoUrl $InstallDir
+        if ($LASTEXITCODE -ne 0) { throw "git clone failed from '$RepoUrl' branch '$Branch' into '$InstallDir'." }
     }
 }
 
@@ -148,7 +155,16 @@ try {
         $percent = [int](($i + 1) * 100 / $steps.Count)
         Write-Host ("[{0}%] {1}" -f $percent, $steps[$i].Label)
         Write-Progress -Activity "Server HWMon Install" -Status $steps[$i].Label -PercentComplete $percent
-        & $steps[$i].Action *>> $LogPath
+        try {
+            & $steps[$i].Action *>> $LogPath
+        } catch {
+            Add-Content -Path $LogPath -Value ("[{0}] FAILED: {1}" -f (Get-Date -Format o), $steps[$i].Label)
+            Add-Content -Path $LogPath -Value ("Exception: " + $_.Exception.Message)
+            if ($_.ScriptStackTrace) {
+                Add-Content -Path $LogPath -Value ("Stack: " + $_.ScriptStackTrace)
+            }
+            throw
+        }
     }
     Write-Progress -Activity "Server HWMon Install" -Completed
     Remove-Item -LiteralPath $LogPath -Force -ErrorAction SilentlyContinue
@@ -156,6 +172,8 @@ try {
 } catch {
     Write-Progress -Activity "Server HWMon Install" -Completed
     Write-Host "Install failed. Log: $LogPath"
+    Write-Host ("Error: " + $_.Exception.Message)
+    Add-Content -Path $LogPath -Value ("[{0}] INSTALL FAILED: {1}" -f (Get-Date -Format o), $_.Exception.Message)
     if (Test-Path $LogPath) {
         Write-Host "---- Last log lines ----"
         Get-Content -Path $LogPath -Tail 120
