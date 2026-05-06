@@ -84,12 +84,16 @@ function Resolve-PythonLauncher {
 
 function Clone-OrUpdateRepo {
     if (Test-Path "$InstallDir\.git") {
-        git -C $InstallDir fetch --all --prune
-        if ($LASTEXITCODE -ne 0) { throw "git fetch failed for '$InstallDir'." }
-        git -C $InstallDir checkout $Branch
+        git -C $InstallDir remote set-url origin $RepoUrl
+        if ($LASTEXITCODE -ne 0) { throw "git remote set-url failed for '$InstallDir'." }
+        git -C $InstallDir fetch --depth 1 origin $Branch
+        if ($LASTEXITCODE -ne 0) { throw "git fetch failed for '$InstallDir' branch '$Branch'." }
+        git -C $InstallDir checkout -B $Branch "origin/$Branch"
         if ($LASTEXITCODE -ne 0) { throw "git checkout '$Branch' failed in '$InstallDir'." }
-        git -C $InstallDir pull --ff-only origin $Branch
-        if ($LASTEXITCODE -ne 0) { throw "git pull failed for branch '$Branch' in '$InstallDir'." }
+        git -C $InstallDir sparse-checkout init --cone
+        if ($LASTEXITCODE -ne 0) { throw "git sparse-checkout init failed in '$InstallDir'." }
+        git -C $InstallDir sparse-checkout set periphery scripts
+        if ($LASTEXITCODE -ne 0) { throw "git sparse-checkout set failed in '$InstallDir'." }
     } else {
         if ((Test-Path $InstallDir) -and (Get-ChildItem -LiteralPath $InstallDir -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
             throw "InstallDir '$InstallDir' exists and is not a git repository. Remove it or choose a different -InstallDir."
@@ -98,8 +102,10 @@ function Clone-OrUpdateRepo {
         if (-not (Test-Path $parent)) {
             New-Item -ItemType Directory -Path $parent | Out-Null
         }
-        git clone --branch $Branch $RepoUrl $InstallDir
+        git clone --depth 1 --filter=blob:none --sparse --branch $Branch $RepoUrl $InstallDir
         if ($LASTEXITCODE -ne 0) { throw "git clone failed from '$RepoUrl' branch '$Branch' into '$InstallDir'." }
+        git -C $InstallDir sparse-checkout set periphery scripts
+        if ($LASTEXITCODE -ne 0) { throw "git sparse-checkout set failed in '$InstallDir'." }
     }
 }
 
@@ -141,11 +147,52 @@ function Install-StartupTask {
     $peripheryDir = Join-Path $InstallDir "periphery"
     $venvPython = Join-Path $peripheryDir ".venv\Scripts\python.exe"
     $mainPy = Join-Path $peripheryDir "periphery_agent.py"
-    $taskCmd = "`"$venvPython`" `"$mainPy`" 1>NUL 2>&1"
-    $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c $taskCmd"
-    $trigger = New-ScheduledTaskTrigger -AtStartup
+    $taskLogDir = Join-Path $peripheryDir "logs"
+    $taskRunner = Join-Path $peripheryDir "run_periphery_task.ps1"
+
+    if (-not (Test-Path $venvPython)) {
+        throw "Task install failed: Python executable missing at '$venvPython'."
+    }
+    if (-not (Test-Path $mainPy)) {
+        throw "Task install failed: Agent script missing at '$mainPy'."
+    }
+
+    New-Item -ItemType Directory -Path $taskLogDir -Force | Out-Null
+    $runnerContent = @"
+`$ErrorActionPreference = 'Stop'
+`$peripheryDir = '$peripheryDir'
+`$venvPython = '$venvPython'
+`$mainPy = '$mainPy'
+`$taskLog = Join-Path `$peripheryDir 'logs\task-runner.log'
+
+function Write-TaskLog([string]`$message) {
+  Add-Content -Path `$taskLog -Value ("[{0}] {1}" -f (Get-Date -Format o), `$message) -Encoding UTF8
+}
+
+try {
+  Write-TaskLog "Task runner start"
+  Set-Location -Path `$peripheryDir
+  & `$venvPython `$mainPy *>> `$taskLog
+  `$exitCode = `$LASTEXITCODE
+  Write-TaskLog ("Task runner exit code: " + `$exitCode)
+  exit `$exitCode
+} catch {
+  Write-TaskLog ("Task runner exception: " + `$_.Exception.Message)
+  if (`$_.ScriptStackTrace) {
+    Write-TaskLog ("Stack: " + `$_.ScriptStackTrace)
+  }
+  exit 1
+}
+"@
+    Set-Content -Path $taskRunner -Value $runnerContent -Encoding UTF8
+
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$taskRunner`""
+    $trigger = @(
+        New-ScheduledTaskTrigger -AtStartup
+        New-ScheduledTaskTrigger -AtLogOn
+    )
     $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances IgnoreNew
 
     Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
     Start-ScheduledTask -TaskName $TaskName

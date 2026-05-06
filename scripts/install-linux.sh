@@ -113,12 +113,15 @@ ensure_user() {
 
 clone_or_update_repo() {
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
-    git -C "${INSTALL_DIR}" fetch --all --prune
-    git -C "${INSTALL_DIR}" checkout "${BRANCH}"
-    git -C "${INSTALL_DIR}" pull --ff-only origin "${BRANCH}"
+    git -C "${INSTALL_DIR}" remote set-url origin "${REPO_URL}"
+    git -C "${INSTALL_DIR}" fetch --depth 1 origin "${BRANCH}"
+    git -C "${INSTALL_DIR}" checkout -B "${BRANCH}" "origin/${BRANCH}"
+    git -C "${INSTALL_DIR}" sparse-checkout init --cone
+    git -C "${INSTALL_DIR}" sparse-checkout set periphery scripts
   else
     mkdir -p "$(dirname "${INSTALL_DIR}")"
-    git clone --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+    git clone --depth 1 --filter=blob:none --sparse --branch "${BRANCH}" "${REPO_URL}" "${INSTALL_DIR}"
+    git -C "${INSTALL_DIR}" sparse-checkout set periphery scripts
   fi
 }
 
