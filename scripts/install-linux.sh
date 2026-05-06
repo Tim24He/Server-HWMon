@@ -20,6 +20,13 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/server-hwmon}"
 SERVICE_NAME="${SERVICE_NAME:-server-hwmon-periphery}"
 RUN_USER="${RUN_USER:-serverstat}"
 
+assert_systemd() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    echo "systemd is required on Linux for this installer. Install manually on non-systemd hosts." >&2
+    exit 1
+  fi
+}
+
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
     echo "This installer must run as root (use sudo)." >&2
@@ -66,6 +73,11 @@ install_packages() {
     return
   fi
 
+  if command -v yum >/dev/null 2>&1; then
+    yum install -y git curl python3 python3-pip
+    return
+  fi
+
   if command -v pacman >/dev/null 2>&1; then
     pacman -Sy --noconfirm git curl python python-virtualenv
     return
@@ -73,6 +85,11 @@ install_packages() {
 
   if command -v zypper >/dev/null 2>&1; then
     zypper --non-interactive install git curl python3 python3-virtualenv
+    return
+  fi
+
+  if command -v apk >/dev/null 2>&1; then
+    apk add --no-cache git curl python3 py3-pip py3-virtualenv
     return
   fi
 
@@ -84,7 +101,14 @@ ensure_user() {
   if id "${RUN_USER}" >/dev/null 2>&1; then
     return
   fi
-  useradd --system --create-home --shell /usr/sbin/nologin "${RUN_USER}"
+  local nologin_shell="/usr/sbin/nologin"
+  if [[ ! -x "${nologin_shell}" ]]; then
+    nologin_shell="/usr/bin/nologin"
+  fi
+  if [[ ! -x "${nologin_shell}" ]]; then
+    nologin_shell="/bin/false"
+  fi
+  useradd --system --create-home --shell "${nologin_shell}" "${RUN_USER}"
 }
 
 clone_or_update_repo() {
@@ -104,7 +128,7 @@ setup_python_env() {
 
   python3 -m venv "${venv_dir}"
   "${venv_dir}/bin/python" -m pip install --no-cache-dir --upgrade pip wheel
-  "${venv_dir}/bin/pip" install --no-cache-dir psutil pyserial serial
+  "${venv_dir}/bin/pip" install --no-cache-dir psutil pyserial
 }
 
 cleanup_install_artifacts() {
@@ -165,6 +189,7 @@ main() {
   }
 
   run_step "Checking privileges" require_root
+  run_step "Checking service manager" assert_systemd
   run_step "Validating configuration" validate_repo_url
   run_step "Installing base packages" install_packages
   run_step "Ensuring service user" ensure_user

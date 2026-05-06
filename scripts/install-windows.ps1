@@ -8,6 +8,14 @@ param(
 $ErrorActionPreference = "Stop"
 $LogPath = Join-Path $env:TEMP ("serverhwmon-install-" + [guid]::NewGuid().ToString("N") + ".log")
 
+function Assert-Admin {
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "This installer must be run from an elevated PowerShell session (Run as Administrator)."
+    }
+}
+
 function Assert-Command {
     param([string]$Name)
     if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
@@ -94,7 +102,7 @@ function Setup-PythonEnv {
     }
 
     & $venvPython -m pip install --no-cache-dir --upgrade pip wheel
-    & $venvPython -m pip install --no-cache-dir psutil pyserial serial
+    & $venvPython -m pip install --no-cache-dir psutil pyserial
 }
 
 function Cleanup-InstallArtifacts {
@@ -125,8 +133,8 @@ function Install-StartupTask {
     Start-ScheduledTask -TaskName $TaskName
 }
 
-Assert-Command git
 $steps = @(
+    @{ Label = "Checking privileges"; Action = { Assert-Admin } },
     @{ Label = "Checking prerequisites"; Action = { Assert-Command git } },
     @{ Label = "Syncing repository"; Action = { Clone-OrUpdateRepo } },
     @{ Label = "Preparing local config"; Action = { Ensure-LocalConfig } },

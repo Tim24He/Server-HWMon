@@ -7,6 +7,14 @@ param(
 $ErrorActionPreference = "Stop"
 $LogPath = Join-Path $env:TEMP ("serverhwmon-uninstall-" + [guid]::NewGuid().ToString("N") + ".log")
 
+function Assert-Admin {
+    $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentIdentity)
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw "This uninstaller must be run from an elevated PowerShell session (Run as Administrator)."
+    }
+}
+
 function Remove-StartupTask {
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
         try {
@@ -27,6 +35,7 @@ function Remove-InstalledFiles {
 }
 
 $steps = @(
+    @{ Label = "Checking privileges"; Action = { Assert-Admin } },
     @{ Label = "Removing startup task"; Action = { Remove-StartupTask } },
     @{ Label = "Removing installed files"; Action = { Remove-InstalledFiles } }
 )

@@ -28,13 +28,19 @@ require_root() {
 remove_service() {
   local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
 
-  if systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
-    systemctl disable --now "${SERVICE_NAME}.service" || true
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl list-unit-files | grep -q "^${SERVICE_NAME}.service"; then
+      systemctl disable --now "${SERVICE_NAME}.service" || true
+    fi
+  else
+    echo "systemctl not found; skipping service stop/disable." >&2
   fi
 
   if [[ -f "${service_file}" ]]; then
     rm -f "${service_file}"
-    systemctl daemon-reload
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl daemon-reload
+    fi
   fi
 }
 
