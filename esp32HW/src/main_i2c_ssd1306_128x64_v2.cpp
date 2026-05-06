@@ -9,7 +9,8 @@ static constexpr unsigned long DATA_STALE_TIMEOUT_MS = 3000;
 static constexpr unsigned long PIXEL_SHIFT_INTERVAL_MS = 10UL * 60UL * 1000UL;
 static constexpr int DISPLAY_WIDTH = 128;
 static constexpr int DISPLAY_HEIGHT = 64;
-static constexpr const char* FIRMWARE_VERSION = "i2c_ssd1306_128x64_v1";
+static constexpr const char* FIRMWARE_VERSION = "i2c_ssd1306_128x64_v2";
+static constexpr int METRIC_HISTORY_CAPACITY = 48;
 char serial_line_buffer[SERIAL_LINE_BUFFER_SIZE];
 size_t serial_line_length = 0;
 
@@ -46,6 +47,12 @@ static const unsigned char image_device_power_button_bits[] U8X8_PROGMEM = {
     0x28, 0x85, 0x50, 0x05, 0x50, 0x05, 0x50, 0x05, 0x50, 0x05, 0x50,
     0x0a, 0x28, 0x12, 0x24, 0xe4, 0x13, 0x18, 0x0c, 0xe0, 0x03};
 
+struct MetricHistory {
+  float values[METRIC_HISTORY_CAPACITY] = {0.0f};
+  int count = 0;
+  int head = 0;
+};
+
 struct HostStats {
   String timestamp_utc;
   String hostname;
@@ -64,6 +71,8 @@ bool showing_offline_screen = true;
 unsigned long last_pixel_shift_ms = 0;
 int display_shift_x = 0;
 int display_shift_y = 0;
+MetricHistory temp_history;
+MetricHistory cpu_history;
 
 int clamp_int(int value, int min_value, int max_value) {
   if (value < min_value) {
@@ -99,6 +108,62 @@ void draw_str_shifted(int x, int y, const char* text, bool utf8 = false) {
     u8g2.drawUTF8(sx, sy, text);
   } else {
     u8g2.drawStr(sx, sy, text);
+  }
+}
+
+void push_metric_history(MetricHistory& history, float value) {
+  history.values[history.head] = value;
+  history.head = (history.head + 1) % METRIC_HISTORY_CAPACITY;
+  if (history.count < METRIC_HISTORY_CAPACITY) {
+    history.count++;
+  }
+}
+
+float history_value_at(const MetricHistory& history, int index_from_oldest) {
+  const int oldest_index =
+      (history.head - history.count + METRIC_HISTORY_CAPACITY) % METRIC_HISTORY_CAPACITY;
+  const int idx = (oldest_index + index_from_oldest) % METRIC_HISTORY_CAPACITY;
+  return history.values[idx];
+}
+
+void draw_history_graph_shifted(int x, int y, int w, int h, const MetricHistory& history) {
+  if (w < 2 || h < 2 || history.count < 2) {
+    return;
+  }
+
+  const int points = (history.count < w) ? history.count : w;
+  const int start = history.count - points;
+  float min_v = history_value_at(history, start);
+  float max_v = min_v;
+
+  for (int i = 1; i < points; ++i) {
+    const float v = history_value_at(history, start + i);
+    if (v < min_v) {
+      min_v = v;
+    }
+    if (v > max_v) {
+      max_v = v;
+    }
+  }
+
+  if ((max_v - min_v) < 0.01f) {
+    max_v = min_v + 1.0f;
+  }
+
+  int prev_x = x;
+  const float first_value = history_value_at(history, start);
+  int prev_y = y + h - 1 - static_cast<int>(((first_value - min_v) / (max_v - min_v)) * (h - 1));
+
+  for (int i = 1; i < points; ++i) {
+    const float v = history_value_at(history, start + i);
+    const int px = x + i;
+    const int py = y + h - 1 - static_cast<int>(((v - min_v) / (max_v - min_v)) * (h - 1));
+    u8g2.drawLine(clamp_int(prev_x + display_shift_x, 0, DISPLAY_WIDTH - 1),
+                  clamp_int(prev_y + display_shift_y, 0, DISPLAY_HEIGHT - 1),
+                  clamp_int(px + display_shift_x, 0, DISPLAY_WIDTH - 1),
+                  clamp_int(py + display_shift_y, 0, DISPLAY_HEIGHT - 1));
+    prev_x = px;
+    prev_y = py;
   }
 }
 
@@ -151,16 +216,6 @@ void render_display() {
     return x;
   };
 
-  auto centered_x_in_region = [](int region_left, int region_width, const char* text,
-                                 U8G2& display) -> int {
-    const int text_width = display.getStrWidth(text);
-    int x = region_left + (region_width - text_width) / 2;
-    if (x < region_left) {
-      x = region_left;
-    }
-    return x;
-  };
-
   u8g2.clearBuffer();
 
   // [BEGIN lopaka generated]
@@ -187,12 +242,16 @@ void render_display() {
 
   draw_xbm_shifted(0, 40, 16, 16, image_Temperature_bits);
 
-  u8g2.setFont(u8g2_font_profont17_tr);
-  draw_str_shifted(centered_x_in_region(14, 48, temp_text, u8g2), 53, temp_text, true);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  draw_str_shifted(30, 43, temp_text, true);
 
   draw_xbm_shifted(67, 40, 16, 16, image_Voltage_bits);
 
-  draw_str_shifted(centered_x_in_region(84, 44, cpu_text, u8g2), 53, cpu_text);
+  draw_str_shifted(101, 43, cpu_text);
+
+  // Keep graph area below the value text and to the right of the icon.
+  draw_history_graph_shifted(18, 46, 42, 16, temp_history);
+  draw_history_graph_shifted(84, 46, 42, 16, cpu_history);
 
   draw_xbm_shifted(10, 3, 8, 8, image_menu_bits);
 
@@ -261,6 +320,14 @@ void process_serial_line(const char* line) {
   has_latest_stats = true;
   last_valid_data_ms = millis();
   showing_offline_screen = false;
+  if (parsed.has_core_temp) {
+    push_metric_history(temp_history, parsed.core_temp_c);
+  } else if (temp_history.count > 0) {
+    push_metric_history(temp_history, history_value_at(temp_history, temp_history.count - 1));
+  } else {
+    push_metric_history(temp_history, 0.0f);
+  }
+  push_metric_history(cpu_history, parsed.cpu_load_percent);
   render_display();
 }
 
