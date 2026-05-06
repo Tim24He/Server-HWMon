@@ -9,6 +9,7 @@ static constexpr unsigned long DATA_STALE_TIMEOUT_MS = 3000;
 static constexpr unsigned long PIXEL_SHIFT_INTERVAL_MS = 10UL * 60UL * 1000UL;
 static constexpr int DISPLAY_WIDTH = 128;
 static constexpr int DISPLAY_HEIGHT = 64;
+static constexpr const char* FIRMWARE_VERSION = "i2c_ssd1306_128x64_v1";
 char serial_line_buffer[SERIAL_LINE_BUFFER_SIZE];
 size_t serial_line_length = 0;
 
@@ -23,6 +24,12 @@ static const unsigned char image_cloud_bits[] U8X8_PROGMEM = {
 
 static const unsigned char image_menu_bits[] U8X8_PROGMEM = {
     0x00, 0xff, 0x00, 0xff, 0x00, 0x00, 0xff, 0x00};
+
+static const unsigned char image_arrow_down_bits[] U8X8_PROGMEM = {
+    0x04, 0x04, 0x04, 0x04, 0x15, 0x0e, 0x04};
+
+static const unsigned char image_arrow_up_bits[] U8X8_PROGMEM = {
+    0x04, 0x0e, 0x15, 0x04, 0x04, 0x04, 0x04};
 
 static const unsigned char image_Temperature_bits[] U8X8_PROGMEM = {
     0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x40, 0x01, 0x40, 0x01, 0x40,
@@ -44,6 +51,8 @@ struct HostStats {
   String hostname;
   String ip;
   float cpu_load_percent = 0.0f;
+  float net_upload_kbps = 0.0f;
+  float net_download_kbps = 0.0f;
   bool has_core_temp = false;
   float core_temp_c = 0.0f;
 };
@@ -112,6 +121,8 @@ void render_display() {
   char ip_text[32] = "waiting...";
   char temp_text[16] = "n/a";
   char cpu_text[16] = "0%";
+  char upload_text[16] = "0k";
+  char download_text[16] = "0k";
   const char* title_text = "No Data";
 
   if (has_latest_stats) {
@@ -127,6 +138,8 @@ void render_display() {
       snprintf(temp_text, sizeof(temp_text), "%.0f\xC2\xB0""C", latest_stats.core_temp_c);
     }
     snprintf(cpu_text, sizeof(cpu_text), "%.0f%%", latest_stats.cpu_load_percent);
+    snprintf(upload_text, sizeof(upload_text), "%.0fk", latest_stats.net_upload_kbps);
+    snprintf(download_text, sizeof(download_text), "%.0fk", latest_stats.net_download_kbps);
   }
 
   auto centered_x = [](int area_width, const char* text, U8G2& display) -> int {
@@ -158,16 +171,19 @@ void render_display() {
   u8g2.setFont(u8g2_font_haxrcorp4089_tr);
   draw_str_shifted(centered_x(128, title_text, u8g2), 10, title_text);
 
-  draw_rframe_shifted(0, 16, 128, 14, 5);
+  draw_rframe_shifted(0, 16, 128, 13, 5);
 
   draw_rframe_shifted(0, 32, 62, 32, 5);
 
   draw_rframe_shifted(66, 32, 62, 32, 5);
 
-  u8g2.setFont(u8g2_font_5x7_tr);
-  draw_str_shifted(centered_x(128, ip_text, u8g2), 26, ip_text);
+  u8g2.setFont(u8g2_font_4x6_tr);
+  draw_str_shifted(5, 25, ip_text);
 
-  draw_xbm_shifted(6, 17, 17, 16, image_cloud_bits);
+  draw_xbm_shifted(73, 19, 5, 7, image_arrow_up_bits);
+  draw_xbm_shifted(97, 19, 5, 7, image_arrow_down_bits);
+  draw_str_shifted(80, 25, upload_text);
+  draw_str_shifted(104, 25, download_text);
 
   draw_xbm_shifted(0, 40, 16, 16, image_Temperature_bits);
 
@@ -220,6 +236,8 @@ bool decode_stats_json(const char* json_line, HostStats& out_stats) {
   try_read_string_field(doc, "hostname", out_stats.hostname);
   try_read_string_field(doc, "ip", out_stats.ip);
   try_read_float_field(doc, "cpu_load_percent", out_stats.cpu_load_percent);
+  try_read_float_field(doc, "net_upload_kbps", out_stats.net_upload_kbps);
+  try_read_float_field(doc, "net_download_kbps", out_stats.net_download_kbps);
 
   const JsonVariantConst core_temp = doc["core_temp_c"];
   if (core_temp.isNull()) {
@@ -275,6 +293,7 @@ void poll_serial_input() {
 void setup() {
   Serial.begin(115200);
   delay(250);
+  Serial.printf("Firmware: %s\n", FIRMWARE_VERSION);
   Wire.begin();
   Wire.setClock(400000);
   u8g2.begin();
