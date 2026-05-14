@@ -340,9 +340,7 @@ def _connect_serial_with_retry() -> serial.Serial:
     while True:
         port_name = _find_esp32_port()
         if not port_name:
-            print(
-                f"No ESP32 USB serial device found. Retrying in {RECONNECT_DELAY_SECONDS:.0f}s..."
-            )
+            # print(f"No ESP32 USB serial device found. Retrying in {RECONNECT_DELAY_SECONDS:.0f}s...")
             time.sleep(RECONNECT_DELAY_SECONDS)
             continue
 
