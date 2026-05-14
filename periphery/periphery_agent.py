@@ -14,6 +14,8 @@ from serial.tools import list_ports
 
 
 DEBUG_MODE = False
+VERBOSE_LOGGING = False
+LOG_THROTTLE_SECONDS = 120.0
 
 EXPORT_INTERVAL_SECONDS = 1.0
 RECONNECT_DELAY_SECONDS = 5.0
@@ -52,6 +54,31 @@ _CACHED_CPU_LOAD_PERCENT: float = 0.0
 _CACHED_NET_UPLOAD_KBPS: float = 0.0
 _CACHED_NET_DOWNLOAD_KBPS: float = 0.0
 _LAST_LOAD_TS: float | None = None
+_LAST_LOG_TS_BY_KEY: dict[str, float] = {}
+
+
+def _log(message: str, *, key: str | None = None, force: bool = False) -> None:
+    """Lightweight logging with optional throttling.
+
+    - DEBUG_MODE or VERBOSE_LOGGING: always print.
+    - Default mode: print only force=True messages, or throttled keyed messages.
+    """
+    if DEBUG_MODE or VERBOSE_LOGGING:
+        print(message, flush=True)
+        return
+
+    if force:
+        print(message, flush=True)
+        return
+
+    if key is None:
+        return
+
+    now_ts = time.time()
+    last_ts = _LAST_LOG_TS_BY_KEY.get(key)
+    if last_ts is None or (now_ts - last_ts) >= LOG_THROTTLE_SECONDS:
+        _LAST_LOG_TS_BY_KEY[key] = now_ts
+        print(message, flush=True)
 
 
 def _get_primary_ipv4() -> str:
@@ -77,9 +104,11 @@ def _apply_runtime_config(data: dict[str, Any], source_name: str) -> None:
     global ESP32_KEYWORDS
     global ESP32_VID_HINTS
     global DEBUG_MODE
+    global VERBOSE_LOGGING
+    global LOG_THROTTLE_SECONDS
 
     if not isinstance(data, dict):
-        print(f"{source_name} must contain a JSON object. Ignoring this file.")
+        _log(f"{source_name} must contain a JSON object. Ignoring this file.", force=True)
         return
 
     export_interval_seconds = data.get("EXPORT_INTERVAL_SECONDS")
@@ -139,6 +168,14 @@ def _apply_runtime_config(data: dict[str, Any], source_name: str) -> None:
     if isinstance(debug_mode, bool):
         DEBUG_MODE = debug_mode
 
+    verbose_logging = data.get("VERBOSE_LOGGING")
+    if isinstance(verbose_logging, bool):
+        VERBOSE_LOGGING = verbose_logging
+
+    log_throttle_seconds = data.get("LOG_THROTTLE_SECONDS")
+    if isinstance(log_throttle_seconds, (int, float)) and log_throttle_seconds > 0:
+        LOG_THROTTLE_SECONDS = float(log_throttle_seconds)
+
 
 def _load_runtime_config() -> None:
     if not LOCAL_OVERRIDE_CONFIG_FILE.exists():
@@ -147,7 +184,10 @@ def _load_runtime_config() -> None:
     try:
         data = json.loads(LOCAL_OVERRIDE_CONFIG_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"Failed to load {LOCAL_OVERRIDE_CONFIG_FILE.name}: {exc}. Ignoring this file.")
+        _log(
+            f"Failed to load {LOCAL_OVERRIDE_CONFIG_FILE.name}: {exc}. Ignoring this file.",
+            force=True,
+        )
         return
 
     _apply_runtime_config(data, LOCAL_OVERRIDE_CONFIG_FILE.name)
@@ -346,17 +386,18 @@ def _connect_serial_with_retry() -> serial.Serial:
 
         try:
             ser = serial.Serial(port=port_name, baudrate=SERIAL_BAUDRATE, timeout=1.0)
-            print(f"Connected to ESP32 on {port_name} @ {SERIAL_BAUDRATE} baud")
+            _log(f"Connected to ESP32 on {port_name} @ {SERIAL_BAUDRATE} baud", force=True)
             return ser
         except serial.SerialException as exc:
-            print(
-                f"Failed to open {port_name}: {exc}. Retrying in {RECONNECT_DELAY_SECONDS:.0f}s..."
+            _log(
+                f"Failed to open {port_name}: {exc}. Retrying in {RECONNECT_DELAY_SECONDS:.0f}s...",
+                key="serial_open_failed",
             )
             time.sleep(RECONNECT_DELAY_SECONDS)
 
 
 def _run_debug_loop() -> None:
-    print("Periphery scraper started in debug mode. Ctrl+C to stop.")
+    _log("Periphery scraper started in debug mode. Ctrl+C to stop.", force=True)
     while True:
         stats = scrape_host_stats()
         payload = serialize_stats(stats)
@@ -365,7 +406,7 @@ def _run_debug_loop() -> None:
 
 
 def _run_serial_loop() -> None:
-    print("Periphery scraper started. Ctrl+C to stop.")
+    _log("Periphery scraper started. Ctrl+C to stop.", force=True)
     while True:
         serial_conn = _connect_serial_with_retry()
         try:
@@ -377,8 +418,9 @@ def _run_serial_loop() -> None:
                     serial_conn.flush()
                 time.sleep(EXPORT_INTERVAL_SECONDS)
         except (serial.SerialException, OSError) as exc:
-            print(
-                f"Serial connection dropped: {exc}. Reconnecting in {RECONNECT_DELAY_SECONDS:.0f}s..."
+            _log(
+                f"Serial connection dropped: {exc}. Reconnecting in {RECONNECT_DELAY_SECONDS:.0f}s...",
+                key="serial_connection_dropped",
             )
             time.sleep(RECONNECT_DELAY_SECONDS)
         finally:
