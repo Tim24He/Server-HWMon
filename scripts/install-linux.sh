@@ -105,6 +105,28 @@ ensure_user() {
   useradd --system --create-home --shell "${nologin_shell}" "${RUN_USER}"
 }
 
+ensure_serial_group_access() {
+  # USB serial devices are usually root:dialout (or sometimes uucp/tty).
+  # Ensure the service user can open /dev/ttyACM* and /dev/ttyUSB*.
+  local added_any=0
+  for grp in dialout uucp tty; do
+    if getent group "${grp}" >/dev/null 2>&1; then
+      usermod -aG "${grp}" "${RUN_USER}"
+      added_any=1
+    fi
+  done
+
+  if [[ "${added_any}" -eq 0 ]]; then
+    echo "Warning: no serial access group (dialout/uucp/tty) was found on this host." >&2
+  fi
+
+  # Verification: fail fast if group add did not stick.
+  if ! id -nG "${RUN_USER}" | tr ' ' '\n' | grep -Eq '^(dialout|uucp|tty)$'; then
+    echo "Failed to grant ${RUN_USER} serial-port group access." >&2
+    exit 1
+  fi
+}
+
 clone_or_update_repo() {
   if [[ -d "${INSTALL_DIR}/.git" ]]; then
     git -C "${INSTALL_DIR}" remote set-url origin "${REPO_URL}"
@@ -170,7 +192,7 @@ EOF
 }
 
 main() {
-  local total_steps=9
+  local total_steps=11
   local current_step=0
   run_step() {
     local label="$1"
@@ -190,6 +212,7 @@ main() {
   run_step "Validating configuration" validate_repo_url
   run_step "Installing base packages" install_packages
   run_step "Ensuring service user" ensure_user
+  run_step "Granting serial-port access" ensure_serial_group_access
   run_step "Syncing repository" clone_or_update_repo
   run_step "Preparing local config" ensure_local_config
   run_step "Setting up Python environment" setup_python_env
